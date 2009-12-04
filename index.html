@@ -106,6 +106,12 @@ html, body{
 <script>
 google.load('maps', '2');
 $(function(){
+	if (!window.console || !window.console.log){
+		var console = {
+			log: function(){}
+		};
+	}
+	
 	var $pano = $('#pano');
 	var loc = $('#loc');
 	var panL = $('#panL');
