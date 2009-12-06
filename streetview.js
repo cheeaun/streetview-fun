@@ -59,10 +59,10 @@ var init = function(){
 		map.disableDoubleClickZoom();
 		map.disablePinchToZoom();
 		
-		var guyIcon = new GIcon(false, 'dot.png');
-		guyIcon.iconSize = new GSize(8, 8);
-		guyIcon.iconAnchor = new GPoint(4, 4);
-		guyIcon.infoWindowAnchor = new GPoint(4, 4);
+		var icon = new GIcon(false, 'dot.png');
+		icon.iconSize = new GSize(8, 8);
+		icon.iconAnchor = new GPoint(4, 4);
+		icon.infoWindowAnchor = new GPoint(4, 4);
 		
 		GEvent.addListener(pano, 'error', function(e){
 			if (e == FLASH_UNAVAILABLE){
@@ -71,13 +71,24 @@ var init = function(){
 			}
 		});
 		
+		var marker = new GMarker({}, {icon: icon});
 		var once = false;
+		var panoId = null;
+		var svClient = new GStreetviewClient();
 		GEvent.addListener(pano, 'initialized', function(l){
+//			console.log('initialized');
 //			console.log(l);
 			loc.text('You are at ' + l.description);
-			map.setCenter(l.latlng, 16);
+			var latlng = l.latlng;
+			if (!once){
+				map.setCenter(latlng, 16);
+			} else {
+				setTimeout(function(){
+					map.panTo(latlng);
+				}, 1000);
+			}
 			map.clearOverlays();
-			var marker = new GMarker(l.latlng, {icon: guyIcon});
+			marker.setLatLng(latlng);
 			map.addOverlay(marker);
 			
 			var lpov = pano.getPOV();
@@ -86,15 +97,42 @@ var init = function(){
 				pitch: -lpov.pitch,
 				zoom: lpov.zoom
 			};
-			backMirror.setLocationAndPOV(l.latlng, pov);
+			var yaw = l.yaw;
+			var oriPanoId = l.panoId;
+			if (!once || !panoId){
+				backMirror.setLocationAndPOV(latlng, pov);
+				panoId = oriPanoId;
+			} else {
+				svClient.getPanoramaById(oriPanoId, function(svData){
+					var links = svData.links;
+					if (!links.length) return;
+					var near = false;
+					for (var i=0, l=links.length; i<l; i++){
+						if (links[i].panoId == panoId){
+							near = true;
+							break;
+						}
+					}
+					if (near){
+						backMirror.followLink(yaw);
+					} else {
+						backMirror.setLocationAndPOV(latlng, pov);
+					}
+					panoId = oriPanoId;
+				});
+			}
 			
 			if (!once){
-				setTimeout(function(){
-					$backmirrorContainer.css('top', '-100%');
-				}, 1000);
 				$mapContainer.hide();
 				once = true;
 			}
+		});
+		
+		var once1 = false;
+		GEvent.addListener(backMirror, 'initialized', function(l){
+			if (once1) return;
+			once1 = true;
+			$backmirrorContainer.css('top', '-100%');
 		});
 		
 		GEvent.addListener(pano, 'yawchanged', function(yaw){
@@ -106,43 +144,38 @@ var init = function(){
 				'-webkit-transform': 'rotate(' + deg + 'deg)'
 			});
 			
-			setTimeout(function(){
-				var lpov = pano.getPOV();
-				var pov = {
-					yaw: yaw-180,
-					pitch: -lpov.pitch,
-					zoom: lpov.zoom
-				};
-				backMirror.setPOV($.extend(pov, {
-					yaw: yaw-180
-				}));
-			}, 10);
+			var lpov = pano.getPOV();
+			var pov = {
+				yaw: yaw-180,
+				pitch: -lpov.pitch,
+				zoom: lpov.zoom
+			};
+			if (pov.yaw == backMirror.getPOV().yaw) return;
+			backMirror.panTo(pov);
 		});
 		
 		GEvent.addListener(pano, 'pitchchanged', function(pitch){
 //			console.log('pitchchanged');
-			setTimeout(function(){
-				var lpov = pano.getPOV();
-				var pov = {
-					yaw: lpov.yaw-180,
-					pitch: -pitch,
-					zoom: lpov.zoom
-				};
-				backMirror.setPOV(pov);
-			}, 20);
+			var lpov = pano.getPOV();
+			var pov = {
+				yaw: lpov.yaw-180,
+				pitch: -pitch,
+				zoom: lpov.zoom
+			};
+			if (pov.pitch == backMirror.getPOV().pitch) return;
+			backMirror.panTo(pov);
 		});
 		
 		GEvent.addListener(pano, 'zoomchanged', function(zoom){
 //			console.log('zoomchanged');
-			setTimeout(function(){
-				var lpov = pano.getPOV();
-				var pov = {
-					yaw: lpov.yaw-180,
-					pitch: -lpov.pitch,
-					zoom: zoom
-				};
-				backMirror.setPOV(pov);
-			}, 30);
+			var lpov = pano.getPOV();
+			var pov = {
+				yaw: lpov.yaw-180,
+				pitch: -lpov.pitch,
+				zoom: zoom
+			};
+			if (pov.zoom == backMirror.getPOV().zoom) return;
+			backMirror.panTo(pov);
 		});
 
 		var timer;
@@ -205,6 +238,8 @@ var init = function(){
 		$(window).resize(function(){
 			pano.checkResize();
 			backMirror.checkResize();
+			map.checkResize();
+			map.setCenter(marker.getLatLng());
 		});
 		
 		$(document).mouseleave(clear).blur(clear);
